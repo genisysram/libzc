@@ -237,7 +237,7 @@ static int do_plaintext(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	/* number of concurrent threads */
+	/* number of threads */
 	if (arg_threads) {
 		thread_count = atol(arg_threads);
 		if (thread_count < 1) {

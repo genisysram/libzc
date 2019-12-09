@@ -166,13 +166,52 @@ int key2r_compute_single(uint32_t key2i_plus_1,
 	return 0;
 }
 
+int keys_per_thread(size_t keys, size_t threads, size_t **to_process)
+{
+	size_t *tmp;
+
+	tmp = calloc(threads, sizeof(size_t));
+	if (!tmp)
+		return -1;
+
+	size_t keys_per_thread = keys / threads;
+	size_t remaining = keys % threads;
+
+	for (size_t i = 0; i < threads; ++i) {
+		tmp[i] = keys_per_thread;
+		if (remaining) {
+			tmp[i]++;
+			--remaining;
+		}
+	}
+
+	*to_process = tmp;
+
+	return 0;
+}
+
 static int key2r_compute_next_array(const struct kvector *key2i_plus_1,
 				    struct kvector *key2i,
 				    const uint16_t *key2i_bits_15_2,
 				    const uint16_t *key2im1_bits_15_2,
-				    uint32_t common_bits_mask)
+				    uint32_t common_bits_mask,
+				    size_t threads)
 {
+	size_t *to_process;
+
 	kempty(key2i);
+
+	if (keys_per_thread(key2i_plus_1->size, threads, &to_process))
+		return -1;
+
+	/* TODO: enqueue a work unit here:
+
+	   struct work_unit {
+	        size_t len; // amount of keys to process
+                off_t start; // start offset
+                struct kvector *;
+	   };
+	 */
 
 	for (uint32_t i = 0; i < key2i_plus_1->size; ++i) {
 		if (key2r_compute_single(kat(key2i_plus_1, i),
@@ -206,6 +245,8 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 		kfree(key2i_plus_1);
 		return -1;
 	}
+
+	/* TODO: create thread pool here with the right amount of threads */
 
 	/* perform reduction */
 	const uint32_t start_index = ptext->size - 2;

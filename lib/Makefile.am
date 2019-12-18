@@ -64,6 +64,8 @@ libzc_la_SOURCES =\
 	ptext_reduce.c \
 	pwstream.c \
 	pwstream.h \
+	pool.c \
+	pool.h \
 	qsort.h \
 	zc_crk_bforce.c \
 	zc_crk_dict.c \

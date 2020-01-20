@@ -252,7 +252,7 @@ START_TEST(test_wait_idle)
 	struct threadpool *pool = NULL;
 	struct work_wait **tmp;
 	int err;
-	printf("test_wait_idle begin\n");
+
 	tmp = calloc(64, sizeof(struct work_wait *));
 	err = threadpool_new(&ops, 8, &pool);
 	ck_assert_int_eq(err, 0);

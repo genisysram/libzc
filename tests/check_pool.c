@@ -165,9 +165,10 @@ static void dealloc_once(void *data)
 
 static int not_called(void *data, struct list_head *list)
 {
-	(void*)data;
-	(void*)list;
+	(void)data;
+	(void)list;
 	ck_assert_int_eq(0, 1);
+	return 0;
 }
 
 START_TEST(test_alloc_fail)

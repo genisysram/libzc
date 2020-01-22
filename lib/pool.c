@@ -239,8 +239,7 @@ static void start_fail_cleanup(struct threadpool *p)
 /**
  * Allocate new thread pool.
  */
-int threadpool_new(struct threadpool_ops *ops,
-		   size_t nbthreads, struct threadpool **p)
+int threadpool_new(size_t nbthreads, struct threadpool **p)
 {
 	struct threadpool *tmp;
 	int err;
@@ -268,7 +267,6 @@ int threadpool_new(struct threadpool_ops *ops,
 		goto err4;
 
 	tmp->nbthreads = nbthreads;
-	tmp->ops = ops;
 
 	INIT_LIST_HEAD(&tmp->active_head);
 	INIT_LIST_HEAD(&tmp->cleanup_head);
@@ -316,11 +314,13 @@ void threadpool_destroy(struct threadpool *p)
  * function and start the worker threads. Note: each thread is started
  * in the idle queue.
  */
-int threadpool_start(struct threadpool *p)
+int threadpool_start(struct threadpool *p, struct threadpool_ops *ops)
 {
 	struct worker *w;
 	void *data;
 	int err;
+
+	p->ops = ops;
 
 	/* allocate workers */
 	for (size_t i = 0; i < p->nbthreads; ++i) {

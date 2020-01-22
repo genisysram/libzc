@@ -49,14 +49,13 @@ struct threadpool_ops {
 	int (*do_work)(void *data, struct list_head *list);
 };
 
-int threadpool_new(struct threadpool_ops *ops,
-		   size_t nbthreads, struct threadpool **p);
+int threadpool_new(size_t nbthreads, struct threadpool **p);
 
 size_t threadpool_get_nbthreads(const struct threadpool *p);
 
 void threadpool_destroy(struct threadpool *p);
 
-int threadpool_start(struct threadpool *p);
+int threadpool_start(struct threadpool *p, struct threadpool_ops *ops);
 
 void threadpool_cancel(struct threadpool *p);
 

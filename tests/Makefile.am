@@ -52,7 +52,7 @@ pwstream_SOURCES = check_pwstream.c
 pwstream_CFLAGS = @CHECK_CFLAGS@ -I$(top_srcdir)/lib
 pwstream_LDADD = $(top_builddir)/lib/pwstream.lo @CHECK_LIBS@ -lm
 
-# reduce related functions
+# pool related functions
 pool_SOURCES = check_pool.c
 pool_CFLAGS = @CHECK_CFLAGS@ -I$(top_srcdir)/lib
 pool_LDADD = $(top_builddir)/lib/pool.lo \
@@ -64,6 +64,10 @@ reduce_SOURCES = check_reduce.c
 reduce_CFLAGS = @CHECK_CFLAGS@ -I$(top_srcdir)/lib
 reduce_LDADD = $(top_builddir)/lib/ptext_reduce.lo \
 	$(top_builddir)/lib/kvector.lo \
+	$(top_builddir)/lib/common.lo \
+	$(top_builddir)/lib/pool.lo \
+	$(top_builddir)/lib/zc_file.lo \
+	$(top_builddir)/lib/libzc.lo \
 	@CHECK_LIBS@
 
 # plaintext password functions

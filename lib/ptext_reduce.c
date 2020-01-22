@@ -19,6 +19,8 @@
 #include <stdlib.h>
 
 #include "ptext_private.h"
+#include "libzc_private.h"
+#include "pool.h"
 
 struct key2r {
 	uint16_t *bits_15_2_cache;
@@ -194,6 +196,9 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 	struct kvector *key2i;
 	uint8_t key3i;
 	uint8_t key3im1;
+
+	if (!ptext->pool)
+		threadpool_new(threads_to_create(ptext->force_threads), &ptext->pool);
 
 	/* first gen key2 */
 	key3i = generate_key3(ptext, ptext->size - 1);

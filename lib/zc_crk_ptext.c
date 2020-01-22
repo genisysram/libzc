@@ -75,6 +75,11 @@ ZC_EXPORT int zc_crk_ptext_new(struct zc_ctx *ctx, struct zc_crk_ptext **ptext)
 	return 0;
 }
 
+ZC_EXPORT void zc_crk_ptext_force_threads(struct zc_crk_ptext *ptext, long w)
+{
+	ptext->force_threads = w;
+}
+
 ZC_EXPORT int zc_crk_ptext_set_text(struct zc_crk_ptext *ptext,
 				    const uint8_t *plaintext,
 				    const uint8_t *ciphertext,

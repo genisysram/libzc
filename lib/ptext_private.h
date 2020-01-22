@@ -41,6 +41,7 @@ struct zc_crk_ptext {
 	bool found;
 	pthread_t found_by;
 	long force_threads;
+	struct threadpool *pool;
 };
 
 #define generate_key3(s, i) (s->plaintext[i] ^ s->ciphertext[i])

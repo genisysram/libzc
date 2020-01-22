@@ -27,6 +27,7 @@
 #include <stdint.h>
 
 #include "ptext_private.h"
+#include "pool.h"
 
 ZC_EXPORT struct zc_crk_ptext *zc_crk_ptext_ref(struct zc_crk_ptext *ptext)
 {
@@ -46,6 +47,8 @@ ZC_EXPORT struct zc_crk_ptext *zc_crk_ptext_unref(struct zc_crk_ptext *ptext)
 	dbg(ptext->ctx, "ptext %p released\n", ptext);
 	kfree(ptext->key2);
 	key2r_free(ptext->k2r);
+	if (ptext->pool)
+		threadpool_destroy(ptext->pool);
 	free(ptext);
 	return NULL;
 }
@@ -68,6 +71,7 @@ ZC_EXPORT int zc_crk_ptext_new(struct zc_ctx *ctx, struct zc_crk_ptext **ptext)
 	new->refcount = 1;
 	new->found = false;
 	new->force_threads = -1;
+	new->pool = NULL;
 	*ptext = new;
 
 	dbg(ctx, "ptext %p created\n", new);

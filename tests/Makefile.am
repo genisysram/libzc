@@ -63,11 +63,9 @@ pool_LDADD = $(top_builddir)/lib/pool.lo \
 reduce_SOURCES = check_reduce.c
 reduce_CFLAGS = @CHECK_CFLAGS@ -I$(top_srcdir)/lib
 reduce_LDADD = $(top_builddir)/lib/ptext_reduce.lo \
-	$(top_builddir)/lib/kvector.lo \
-	$(top_builddir)/lib/common.lo \
 	$(top_builddir)/lib/pool.lo \
-	$(top_builddir)/lib/zc_file.lo \
-	$(top_builddir)/lib/libzc.lo \
+	$(top_builddir)/lib/kvector.lo \
+	$(top_builddir)/lib/sys.lo \
 	@CHECK_LIBS@
 
 # plaintext password functions

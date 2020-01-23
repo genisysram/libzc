@@ -70,7 +70,8 @@ libzc_la_SOURCES =\
 	zc_crk_bforce.c \
 	zc_crk_dict.c \
 	zc_crk_ptext.c \
-	zc_file.c
+	zc_file.c \
+	sys.c
 include_HEADERS = libzc.h
 
 libzc_la_LDFLAGS = $(AM_LDFLAGS) -version-info $(LIBZC_CURRENT):$(LIBZC_REVISION):$(LIBZC_AGE)

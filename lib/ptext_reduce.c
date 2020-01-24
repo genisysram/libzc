@@ -168,7 +168,8 @@ int key2r_compute_single(uint32_t key2i_plus_1,
 	return 0;
 }
 
-static int key2r_compute_next_array(const struct kvector *key2i_plus_1,
+static int key2r_compute_next_array(struct threadpool *pool,
+				    const struct kvector *key2i_plus_1,
 				    struct kvector *key2i,
 				    const uint16_t *key2i_bits_15_2,
 				    const uint16_t *key2im1_bits_15_2,
@@ -215,7 +216,8 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 	for (uint32_t i = start_index; i >= 12; --i) {
 		key3i = generate_key3(ptext, i);
 		key3im1 = generate_key3(ptext, i - 1);
-		if (key2r_compute_next_array(key2i_plus_1,
+		if (key2r_compute_next_array(ptext->pool,
+					     key2i_plus_1,
 					     key2i,
 					     key2r_get_bits_15_2(ptext->k2r, key3i),
 					     key2r_get_bits_15_2(ptext->k2r, key3im1),

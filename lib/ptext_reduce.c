@@ -189,17 +189,29 @@ static int key2r_compute_next_array(struct threadpool *pool,
 	return 0;
 }
 
+static int alloc_reduc(void **data)
+{
+	return 0;
+}
+
+static void dealloc_reduc(void *data)
+{}
+
+static int do_work_reduc(void *data, struct list_head *list)
+{
+	return 0;
+}
+
 #define SWAP(x, y) do { typeof(x) SWAP = x; x = y; y = SWAP; } while (0)
 
 ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 {
 	struct kvector *key2i_plus_1, *key2i;
 	uint8_t key3i, key3im1;
+	struct threadpool_ops ops = { .alloc_worker = alloc_reduc,
+				      .dealloc_worker = dealloc_reduc,
+				      .do_work = do_work_reduc };
 	int err = -1;
-
-	if (threadpool_new(threads_to_create(ptext->force_threads),
-			   &ptext->pool))
-			return -1;
 
 	/* first gen key2 */
 	key3i = generate_key3(ptext, ptext->size - 1);
@@ -210,6 +222,11 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 	/* allocate space for second array */
 	if (kalloc(&key2i, pow2(22)))
 		goto err2;
+
+	if (threadpool_start(ptext->pool,
+			     &ops,
+			     threads_to_create(ptext->force_threads)))
+		goto err3;
 
 	/* perform reduction */
 	const uint32_t start_index = ptext->size - 2;
@@ -222,7 +239,7 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 					     key2r_get_bits_15_2(ptext->k2r, key3i),
 					     key2r_get_bits_15_2(ptext->k2r, key3im1),
 					     i == start_index ? KEY2_MASK_6BITS : KEY2_MASK_8BITS))
-			goto err3;
+			goto err4; /* TODO: get rid of this */
 
 		kuniq(key2i);
 		SWAP(key2i, key2i_plus_1);
@@ -234,11 +251,13 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 				      * index 13 (n=14) this leaves 13
 				      * bytes for the actual attack */
 	err = 0;
+err4:
+	threadpool_cancel(ptext->pool);
+	threadpool_wait(ptext->pool);
 err3:
 	kfree(key2i);
 err2:
 	kfree(key2i_plus_1);
 err1:
-	threadpool_destroy(ptext->pool);
 	return err;
 }

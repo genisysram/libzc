@@ -30,7 +30,7 @@ START_TEST(test_new_destroy)
 	struct threadpool_ops ops;
 	int err;
 
-	err = threadpool_new(2, &pool);
+	err = threadpool_new(&pool);
 	ck_assert_int_eq(err, 0);
 	ck_assert(pool != NULL);
 	threadpool_destroy(pool);
@@ -73,10 +73,10 @@ START_TEST(test_start_submit_wait1)
 				      .dealloc_worker = dealloc_worker1,
 				      .do_work = do_work1 };
 	int err;
-	err = threadpool_new(1, &pool);
+	err = threadpool_new(&pool);
 	ck_assert_int_eq(err, 0);
 	ck_assert(pool != NULL);
-	err = threadpool_start(pool, &ops);
+	err = threadpool_start(pool, &ops, 1);
 	ck_assert_int_eq(err, 0);
 	struct work1 *work1 = malloc(sizeof(struct work1));
 	work1->i = 42;
@@ -125,10 +125,10 @@ static void test_start_submit_wait(size_t nb_workers,
 	int err;
 
 	tmp = calloc(nb_units, sizeof(struct work3 *));
-	err = threadpool_new(nb_workers, &pool);
+	err = threadpool_new(&pool);
 	ck_assert_int_eq(err, 0);
 	ck_assert(pool != NULL);
-	err = threadpool_start(pool, ops);
+	err = threadpool_start(pool, ops, nb_workers);
 	ck_assert_int_eq(err, 0);
 	for (size_t i = 0; i < nb_units; ++i) {
 		tmp[i] = malloc(sizeof(struct work3));
@@ -178,10 +178,10 @@ START_TEST(test_alloc_fail)
 	struct threadpool *pool = NULL;
 	int err;
 
-	err = threadpool_new(3, &pool);
+	err = threadpool_new(&pool);
 	ck_assert_int_eq(err, 0);
 	ck_assert(pool != NULL);
-	err = threadpool_start(pool, &ops);
+	err = threadpool_start(pool, &ops, 3);
 	ck_assert_int_eq(err, -1);
 	threadpool_destroy(pool);
 }
@@ -253,10 +253,10 @@ START_TEST(test_wait_idle)
 	int err;
 	printf("test_wait_idle begin\n");
 	tmp = calloc(64, sizeof(struct work_wait *));
-	err = threadpool_new(8, &pool);
+	err = threadpool_new(&pool);
 	ck_assert_int_eq(err, 0);
 	ck_assert(pool != NULL);
-	err = threadpool_start(pool, &ops);
+	err = threadpool_start(pool, &ops, 8);
 	ck_assert_int_eq(err, 0);
 	for (size_t i = 0; i < 64; ++i) {
 		tmp[i] = malloc(sizeof(struct work_wait));

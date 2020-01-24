@@ -45,10 +45,9 @@ ZC_EXPORT struct zc_crk_ptext *zc_crk_ptext_unref(struct zc_crk_ptext *ptext)
 	if (ptext->refcount > 0)
 		return ptext;
 	dbg(ptext->ctx, "ptext %p released\n", ptext);
-	kfree(ptext->key2);
+	threadpool_destroy(ptext->pool);
 	key2r_free(ptext->k2r);
-	if (ptext->pool)
-		threadpool_destroy(ptext->pool);
+	kfree(ptext->key2);
 	free(ptext);
 	return NULL;
 }
@@ -61,22 +60,28 @@ ZC_EXPORT int zc_crk_ptext_new(struct zc_ctx *ctx, struct zc_crk_ptext **ptext)
 	if (!new)
 		return -1;
 
-	if (key2r_new(&new->k2r)) {
-		free(new);
-		return -1;
-	}
+	if (key2r_new(&new->k2r))
+		goto err1;
+
+	if (threadpool_new(&new->pool))
+		goto err2;
 
 	generate_key0lsb(new);
 	new->ctx = ctx;
 	new->refcount = 1;
 	new->found = false;
 	new->force_threads = -1;
-	new->pool = NULL;
 	*ptext = new;
 
 	dbg(ctx, "ptext %p created\n", new);
 
 	return 0;
+
+err2:
+	key2r_free(new->k2r);
+err1:
+	free(new);
+	return -1;
 }
 
 ZC_EXPORT void zc_crk_ptext_force_threads(struct zc_crk_ptext *ptext, long w)

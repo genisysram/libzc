@@ -27,7 +27,6 @@
 START_TEST(test_new_destroy)
 {
 	struct threadpool *pool = NULL;
-	struct threadpool_ops ops;
 	int err;
 
 	err = threadpool_new(&pool);
@@ -42,7 +41,7 @@ struct work1 {
 	struct list_head list;
 };
 
-static int alloc_worker1(void **data)
+static int alloc_worker1(void *in, void **data)
 {
 	int *tmp = malloc(64 * sizeof(int));
 	for (int i = 0; i < 64; ++i)
@@ -71,7 +70,8 @@ START_TEST(test_start_submit_wait1)
 	struct threadpool *pool = NULL;
 	struct threadpool_ops ops = { .alloc_worker = alloc_worker1,
 				      .dealloc_worker = dealloc_worker1,
-				      .do_work = do_work1 };
+				      .do_work = do_work1,
+				      .in = NULL };
 	int err;
 	err = threadpool_new(&pool);
 	ck_assert_int_eq(err, 0);
@@ -93,7 +93,7 @@ struct work3 {
 	struct list_head list;
 };
 
-static int alloc_worker3(void **data)
+static int alloc_worker3(void *in, void **data)
 {
 	int *tmp = malloc(64 * sizeof(int));
 	for (int i = 0; i < 64; ++i)
@@ -143,7 +143,7 @@ static void test_start_submit_wait(size_t nb_workers,
 	free(tmp);
 }
 
-static int alloc_worker_fail(void **data)
+static int alloc_worker_fail(void *in, void **data)
 {
 	static int i = 0;
 	if (i++ > 0)
@@ -174,7 +174,8 @@ START_TEST(test_alloc_fail)
 {
 	struct threadpool_ops ops = { .alloc_worker = alloc_worker_fail,
 				      .dealloc_worker = dealloc_worker3,
-				      .do_work = not_called };
+				      .do_work = not_called,
+				      .in = NULL };
 	struct threadpool *pool = NULL;
 	int err;
 
@@ -191,7 +192,8 @@ START_TEST(test_start_submit_wait_less)
 {
 	struct threadpool_ops ops = { .alloc_worker = alloc_worker3,
 				      .dealloc_worker = dealloc_worker3,
-				      .do_work = do_work3 };
+				      .do_work = do_work3,
+				      .in = NULL };
 	test_start_submit_wait(3, 4, &ops);
 }
 END_TEST
@@ -200,7 +202,8 @@ START_TEST(test_start_submit_wait_equal)
 {
 	struct threadpool_ops ops = { .alloc_worker = alloc_worker3,
 				      .dealloc_worker = dealloc_worker3,
-				      .do_work = do_work3 };
+				      .do_work = do_work3,
+				      .in = NULL };
 	test_start_submit_wait(3, 8, &ops);
 }
 END_TEST
@@ -209,7 +212,8 @@ START_TEST(test_start_submit_wait_more)
 {
 	struct threadpool_ops ops = { .alloc_worker = alloc_worker3,
 				      .dealloc_worker = dealloc_worker3,
-				      .do_work = do_work3 };
+				      .do_work = do_work3,
+				      .in = NULL };
 	test_start_submit_wait(3, 16, &ops);
 }
 END_TEST
@@ -220,7 +224,7 @@ struct work_wait {
 	struct list_head list;
 };
 
-static int alloc_worker_wait(void **data)
+static int alloc_worker_wait(void *in, void **data)
 {
 	int *tmp = malloc(64 * sizeof(int));
 	for (int i = 0; i < 64; ++i)
@@ -247,7 +251,8 @@ START_TEST(test_wait_idle)
 {
 	struct threadpool_ops ops = { .alloc_worker = alloc_worker_wait,
 				      .dealloc_worker = dealloc_worker_wait,
-				      .do_work = do_work_wait };
+				      .do_work = do_work_wait,
+				      .in = NULL };
 	struct threadpool *pool = NULL;
 	struct work_wait **tmp;
 	int err;

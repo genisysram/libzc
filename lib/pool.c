@@ -329,7 +329,7 @@ int threadpool_start(struct threadpool *p, struct threadpool_ops *ops, size_t nb
 			dealloc_workers(p);
 			return -1;
 		}
-		err = p->ops->alloc_worker(&data);
+		err = p->ops->alloc_worker(p->ops->in, &data);
 		if (err) {
 			free(w);
 			dealloc_workers(p);

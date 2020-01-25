@@ -33,9 +33,14 @@ enum {
 
 struct threadpool_ops {
 	/*
+	 * alloc_worker input data.
+	 */
+	void *in;
+
+	/*
 	 * Allocate resources for a single worker thread.
 	 */
-	int (*alloc_worker)(void **data);
+	int (*alloc_worker)(void *in, void **out);
 
 	/*
 	 * Deallocate resources for a single worker thread.

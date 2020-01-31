@@ -111,13 +111,14 @@ static uint32_t bits_1_0_key2i(uint32_t key2im1, uint32_t key2i)
 	return tmp;
 }
 
-static int generate_all_key2i_with_bits_1_0(struct kvector *key2i_array,
+static size_t generate_all_key2i_with_bits_1_0(uint32_t *key2i_array,
 					    uint32_t key2i,
 					    const uint16_t *key2im1_bits_15_2)
 
 {
 	const uint32_t key2im1_bits_31_10 = (key2i << 8) ^ crc_32_invtab[key2i >> 24];
 	const uint32_t key2im1_bits_15_10_rhs = key2im1_bits_31_10 & 0xfc00;
+	size_t total = 0;
 
 	for (int j = 0; j < 64; ++j) {
 		const uint32_t key2im1_bits_15_10_lhs = key2im1_bits_15_2[j] & 0xfc00;
@@ -128,22 +129,22 @@ static int generate_all_key2i_with_bits_1_0(struct kvector *key2i_array,
 			uint32_t key2im1;
 			key2im1 = key2im1_bits_31_10 & 0xfffffc00;
 			key2im1 |= key2im1_bits_15_2[j];
-			if (kappend(key2i_array, key2i | bits_1_0_key2i(key2im1, key2i)))
-				return -1;
+			key2i_array[total++] = key2i | bits_1_0_key2i(key2im1, key2i);
 		}
 	}
 
-	return 0;
+	return total;
 }
 
-int key2r_compute_single(uint32_t key2i_plus_1,
-			 struct kvector *key2i,
-			 const uint16_t *key2i_bits_15_2,
-			 const uint16_t *key2im1_bits_15_2,
-			 uint32_t common_bits_mask)
+size_t key2r_compute_single(uint32_t key2i_plus_1,
+			    uint32_t *key2i,
+			    const uint16_t *key2i_bits_15_2,
+			    const uint16_t *key2im1_bits_15_2,
+			    uint32_t common_bits_mask)
 {
 	const uint32_t key2i_bits31_8 = (key2i_plus_1 << 8) ^ crc_32_invtab[key2i_plus_1 >> 24];
 	const uint32_t key2i_bits15_10_rhs = key2i_bits31_8 & common_bits_mask;
+	size_t total = 0;
 
 	for (uint32_t i = 0; i < 64; ++i) {
 		const uint32_t key2i_bits15_10_lhs = key2i_bits_15_2[i] & common_bits_mask;
@@ -160,13 +161,33 @@ int key2r_compute_single(uint32_t key2i_plus_1,
 			key2i_tmp |= key2i_bits_15_2[i];
 
 			/* save bits [1..0] */
-			if (generate_all_key2i_with_bits_1_0(key2i, key2i_tmp, key2im1_bits_15_2))
-				return -1;
+			total += generate_all_key2i_with_bits_1_0(&key2i[total], key2i_tmp, key2im1_bits_15_2);
 		}
 	}
 
-	return 0;
+	return total;
 }
+
+/* static int key2r_compute_next_array(struct threadpool *pool, */
+/* 				    const struct kvector *key2i_plus_1, */
+/* 				    struct kvector *key2i, */
+/* 				    const uint16_t *key2i_bits_15_2, */
+/* 				    const uint16_t *key2im1_bits_15_2, */
+/* 				    uint32_t common_bits_mask) */
+/* { */
+/* 	kempty(key2i); */
+
+/* 	for (uint32_t i = 0; i < key2i_plus_1->size; ++i) { */
+/* 		if (key2r_compute_single(kat(key2i_plus_1, i), */
+/* 					 key2i, */
+/* 					 key2i_bits_15_2, */
+/* 					 key2im1_bits_15_2, */
+/* 					 common_bits_mask)) */
+/* 			return -1; */
+/* 	} */
+
+/* 	return 0; */
+/* } */
 
 static int key2r_compute_next_array(struct threadpool *pool,
 				    const struct kvector *key2i_plus_1,
@@ -175,30 +196,113 @@ static int key2r_compute_next_array(struct threadpool *pool,
 				    const uint16_t *key2im1_bits_15_2,
 				    uint32_t common_bits_mask)
 {
+	struct reduc_work_unit *u;
+	size_t nbunits = key2i_plus_1->size < nbthreads ? key2i_plus_1->size : threadpool_get_nbthreads(pool);
+	size_t nbkeys_per_thread = key2i_plus_1->size / nbunits;
+
+	u = calloc(nbunits, sizeof(struct reduc_work_unit));
+	if (!u) {
+		perror("calloc() failed");
+		return -1;
+	}
+
+	/* points to **final */
 	kempty(key2i);
 
-	for (uint32_t i = 0; i < key2i_plus_1->size; ++i) {
-		if (key2r_compute_single(kat(key2i_plus_1, i),
-					 key2i,
-					 key2i_bits_15_2,
-					 key2im1_bits_15_2,
-					 common_bits_mask))
-			return -1;
+	for (size_t i = 0; i < nbunits; ++i) {
+		u[i].key2i_bits_15_2 = key2i_bits_15_2;
+		u[i].key2im1_bits_15_2 = key2im1_bits_15_2;
+		u[i].common_bits_mask = common_bits_mask;
+		u[i].key2i_plus_1 = &key2i_plus_1->buf[i * nbkeys_per_thread];
+		if (i == nbunits - 1 && key2i_plus_1->size % nbthreads)
+			u[i].key2i_plus_1_size = key2i_plus_1->size % nbthreads;
+		else
+			u[i].key2i_plus_1_size = nbkeys_per_thread;
+		threadpool_submit_work(pool, &u[i].list);
 	}
+
+	threadpool_wait_idle(pool);
 
 	return 0;
 }
 
-static int alloc_reduc(void **data)
+struct reduc_work_unit {
+	const uint16_t *key2i_bits_15_2;
+	const uint16_t *key2im1_bits_15_2;
+	uint32_t common_bits_mask;
+	const uint32_t *key2i_plus_1;	/* keys to process */
+	size_t key2i_plus_1_size;
+	struct list_head list;
+};
+
+struct reduc_data {
+	uint32_t *key2i;	/* buffer that accumulates, one per thread */
+	size_t key2i_size;
+	struct kvector **final;
+	pthread_mutex_t *mutex;
+};
+
+struct reduc_param {
+	struct kvector **final;
+	pthread_mutex_t *mutex;
+};
+
+static int alloc_reduc(void *in, void **data)
 {
+	struct reduc_data *tmp;
+	struct reduc_param *p = (struct reduc_param *)in;
+
+	tmp = calloc(1, sizeof(struct reduc_data));
+	if (!tmp) {
+		perror("calloc() failed");
+		return -1;
+	}
+
+	tmp->key2i = calloc(pow2(22), sizeof(uint32_t));
+	if (!tmp->key2i) {
+		perror("calloc() failed");
+		free(tmp);
+		return -1;
+	}
+
+	tmp->final = p->final;
+	tmp->mutex = p->mutex;
+
+	*data = tmp;
+
 	return 0;
 }
 
 static void dealloc_reduc(void *data)
-{}
+{
+	struct reduc_data *d = (struct reduc_data *)data;
+	free(d->key2i);
+	free(d);
+}
 
 static int do_work_reduc(void *data, struct list_head *list)
 {
+	struct reduc_data *d = (struct reduc_data *)data;
+	struct reduc_work_unit *unit = list_entry(list, struct reduc_work_unit, list);
+
+	d->key2i_size = 0;
+
+	for (size_t i = 0; i < unit->key2i_plus_1_size; ++i)
+		total += key2r_compute_single(unit->key2i_plus_1[i],
+					      d->key2i[total],
+					      unit->key2i_bits_15_2,
+					      unit->key2im1_bits_15_2,
+					      unit->common_bits_mask);
+
+	/* copy results back to main array */
+	pthread_mutex_lock(d->mutex);
+	struct kvector *v = *d->final;
+	for (size_t i = 0; i < d->key2i_size; ++i) {
+		/* TODO: use memcpy here */
+		kappend(v, d->key2i[i]);
+	}
+	pthread_mutex_unlock(d->mutex);
+
 	return 0;
 }
 
@@ -208,10 +312,18 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 {
 	struct kvector *key2i_plus_1, *key2i;
 	uint8_t key3i, key3im1;
-	struct threadpool_ops ops = { .alloc_worker = alloc_reduc,
-				      .dealloc_worker = dealloc_reduc,
-				      .do_work = do_work_reduc };
 	int err = -1;
+
+	struct reduc_param reduc_param = {
+		.final = &key2i,
+		.mutex = &mutex,
+	};
+	struct threadpool_ops ops = {
+		.in = &reduc_param,
+		.alloc_worker = alloc_reduc,
+		.dealloc_worker = dealloc_reduc,
+		.do_work = do_work_reduc,
+	};
 
 	/* first gen key2 */
 	key3i = generate_key3(ptext, ptext->size - 1);

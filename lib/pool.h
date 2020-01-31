@@ -33,7 +33,7 @@ enum {
 
 struct threadpool_ops {
 	/*
-	 * alloc_worker input data.
+	 * alloc_worker input parameters/data.
 	 */
 	void *in;
 
@@ -48,8 +48,7 @@ struct threadpool_ops {
 	void (*dealloc_worker)(void *data);
 
 	/*
-	 * Function called to do the actual work. Returning a non-zero
-	 * value from do_work, will make the worker thread exit.
+	 * Function called to do the actual work.
 	 */
 	int (*do_work)(void *data, struct list_head *list);
 };

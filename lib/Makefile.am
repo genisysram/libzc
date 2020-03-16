@@ -43,9 +43,9 @@ AM_LDFLAGS = -lm ${ZLIB_LIBS}
 #   increment age.
 # - If any interfaces have been removed or changed since the last public
 #   release, then set age to 0. 
-LIBZC_CURRENT=4
-LIBZC_REVISION=1
-LIBZC_AGE=0
+LIBZC_CURRENT=5
+LIBZC_REVISION=0
+LIBZC_AGE=1
 
 lib_LTLIBRARIES = libzc.la
 libzc_la_SOURCES =\
@@ -54,7 +54,6 @@ libzc_la_SOURCES =\
 	decrypt_byte.h \
 	find_password.c \
 	inflate.c \
-	kvector.c \
 	libzc.c \
 	libzc.h \
 	libzc_private.h \

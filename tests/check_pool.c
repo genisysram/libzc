@@ -165,9 +165,10 @@ static void dealloc_once(void *data)
 
 static int not_called(void *data, struct list_head *list)
 {
-	(void*)data;
-	(void*)list;
+	(void)data;
+	(void)list;
 	ck_assert_int_eq(0, 1);
+	return 0;
 }
 
 START_TEST(test_alloc_fail)
@@ -256,7 +257,7 @@ START_TEST(test_wait_idle)
 	struct threadpool *pool = NULL;
 	struct work_wait **tmp;
 	int err;
-	printf("test_wait_idle begin\n");
+
 	tmp = calloc(64, sizeof(struct work_wait *));
 	err = threadpool_new(&pool);
 	ck_assert_int_eq(err, 0);

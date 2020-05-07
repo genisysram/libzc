@@ -179,7 +179,7 @@ static void *worker(void *p)
 		/* remove work from the queue */
 		struct list_head *work = w->pool->work_head.next;
 		list_del(w->pool->work_head.next);
-
+		pthread_cond_broadcast(&w->pool->work_cond);
 		pthread_mutex_unlock(&w->pool->work_mutex);
 
 		/* work --> active */
@@ -429,9 +429,20 @@ void threadpool_wait(struct threadpool *p)
  */
 void threadpool_wait_idle(struct threadpool *p)
 {
+	/* wait for work queue to be empty */
+	pthread_mutex_lock(&p->work_mutex);
+	while (!list_empty(&p->work_head))
+		pthread_cond_wait(&p->work_cond, &p->work_mutex);
+	pthread_mutex_unlock(&p->work_mutex);
+
+	/* wait for workers that are still working to finish */
 	pthread_mutex_lock(&p->mutex);
-	while (!list_empty(&p->active_head))
+	/* printf("Idle empty: %s\n", list_empty(&p->idle_head) ? "yes" : "no"); */
+	/* printf("Active empty: %s\n", list_empty(&p->active_head) ? "yes" : "no"); */
+	/* printf("Cleanup empty: %s\n", list_empty(&p->cleanup_head) ? "yes" : "no"); */
+	while (!list_empty(&p->active_head)) {
 		pthread_cond_wait(&p->cond, &p->mutex);
+	}
 	pthread_mutex_unlock(&p->mutex);
 }
 

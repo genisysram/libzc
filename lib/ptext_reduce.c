@@ -17,6 +17,8 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "ptext_private.h"
 #include "libzc_private.h"
@@ -118,16 +120,41 @@ size_t key2r_compute_single(uint32_t key2i_plus_1,
 /* 	return 0; */
 /* } */
 
+struct reduc_work_unit {
+	const uint16_t *key2i_bits_15_2;
+	const uint16_t *key2im1_bits_15_2;
+	uint32_t common_bits_mask;
+	const uint32_t *key2ip1;	/* keys to process */
+	size_t key2ip1_size;
+	struct list_head list;
+};
+
+struct reduc_data {
+	uint32_t *tmp;	/* buffer that accumulates, one per thread */
+
+	/* data shared between threads */
+	uint32_t *key2i;	/* pointer to shared key buffer */
+	size_t *key2i_size;
+	pthread_mutex_t *mutex;	/* mutex protecting shared data */
+};
+
+struct reduc_input_param {
+	uint32_t *key2i;
+	size_t key2i_size;
+	pthread_mutex_t mutex;
+};
+
 static int key2r_compute_next_array(struct threadpool *pool,
-				    const struct kvector *key2i_plus_1,
-				    struct kvector *key2i,
+				    const uint32_t *key2ip1,
+				    size_t key2ip1_size,
 				    const uint16_t *key2i_bits_15_2,
 				    const uint16_t *key2im1_bits_15_2,
 				    uint32_t common_bits_mask)
 {
 	struct reduc_work_unit *u;
-	size_t nbunits = key2i_plus_1->size < nbthreads ? key2i_plus_1->size : threadpool_get_nbthreads(pool);
-	size_t nbkeys_per_thread = key2i_plus_1->size / nbunits;
+	size_t nbthreads = threadpool_get_nbthreads(pool);
+	size_t nbunits = key2ip1_size < nbthreads ? key2ip1_size : nbthreads;
+	size_t nbkeys_per_thread = key2ip1_size / nbunits;
 
 	u = calloc(nbunits, sizeof(struct reduc_work_unit));
 	if (!u) {
@@ -135,69 +162,49 @@ static int key2r_compute_next_array(struct threadpool *pool,
 		return -1;
 	}
 
-	/* points to **final */
-	kempty(key2i);
-
 	for (size_t i = 0; i < nbunits; ++i) {
 		u[i].key2i_bits_15_2 = key2i_bits_15_2;
 		u[i].key2im1_bits_15_2 = key2im1_bits_15_2;
 		u[i].common_bits_mask = common_bits_mask;
-		u[i].key2i_plus_1 = &key2i_plus_1->buf[i * nbkeys_per_thread];
-		if (i == nbunits - 1 && key2i_plus_1->size % nbthreads)
-			u[i].key2i_plus_1_size = key2i_plus_1->size % nbthreads;
+		u[i].key2ip1 = &key2ip1[i * nbkeys_per_thread];
+		if (i == nbunits - 1 && key2ip1_size % nbthreads)
+			u[i].key2ip1_size = key2ip1_size % nbthreads;
 		else
-			u[i].key2i_plus_1_size = nbkeys_per_thread;
+			u[i].key2ip1_size = nbkeys_per_thread;
 		threadpool_submit_work(pool, &u[i].list);
 	}
 
 	threadpool_wait_idle(pool);
 
+	free(u);
+
 	return 0;
 }
 
-struct reduc_work_unit {
-	const uint16_t *key2i_bits_15_2;
-	const uint16_t *key2im1_bits_15_2;
-	uint32_t common_bits_mask;
-	const uint32_t *key2i_plus_1;	/* keys to process */
-	size_t key2i_plus_1_size;
-	struct list_head list;
-};
-
-struct reduc_data {
-	uint32_t *key2i;	/* buffer that accumulates, one per thread */
-	size_t key2i_size;
-	struct kvector **final;
-	pthread_mutex_t *mutex;
-};
-
-struct reduc_param {
-	struct kvector **final;
-	pthread_mutex_t *mutex;
-};
-
 static int alloc_reduc(void *in, void **data)
 {
-	struct reduc_data *tmp;
-	struct reduc_param *p = (struct reduc_param *)in;
+	struct reduc_data *d;
+	struct reduc_input_param *p = (struct reduc_input_param *)in;
 
-	tmp = calloc(1, sizeof(struct reduc_data));
-	if (!tmp) {
+	d = calloc(1, sizeof(struct reduc_data));
+	if (!d) {
 		perror("calloc() failed");
 		return -1;
 	}
 
-	tmp->key2i = calloc(pow2(22), sizeof(uint32_t));
-	if (!tmp->key2i) {
+	d->tmp = calloc(KEY2_ARRAY_LEN, sizeof(uint32_t));
+	if (!d->tmp) {
 		perror("calloc() failed");
-		free(tmp);
+		free(d);
 		return -1;
 	}
 
-	tmp->final = p->final;
-	tmp->mutex = p->mutex;
+	/* shared buffer */
+	d->key2i = p->key2i;
+	d->key2i_size = &p->key2i_size;
+	d->mutex = &p->mutex;
 
-	*data = tmp;
+	*data = d;
 
 	return 0;
 }
@@ -205,7 +212,7 @@ static int alloc_reduc(void *in, void **data)
 static void dealloc_reduc(void *data)
 {
 	struct reduc_data *d = (struct reduc_data *)data;
-	free(d->key2i);
+	free(d->tmp);
 	free(d);
 }
 
@@ -213,131 +220,76 @@ static int do_work_reduc(void *data, struct list_head *list)
 {
 	struct reduc_data *d = (struct reduc_data *)data;
 	struct reduc_work_unit *unit = list_entry(list, struct reduc_work_unit, list);
+	size_t total = 0;
 
-	d->key2i_size = 0;
-
-	for (size_t i = 0; i < unit->key2i_plus_1_size; ++i)
-		total += key2r_compute_single(unit->key2i_plus_1[i],
-					      d->key2i[total],
+	for (size_t i = 0; i < unit->key2ip1_size; ++i)
+		total += key2r_compute_single(unit->key2ip1[i],
+					      &d->tmp[total],
 					      unit->key2i_bits_15_2,
 					      unit->key2im1_bits_15_2,
 					      unit->common_bits_mask);
 
-	/* copy results back to main array */
+	/* copy back results to final shared buffer */
 	pthread_mutex_lock(d->mutex);
-	struct kvector *v = *d->final;
-	for (size_t i = 0; i < d->key2i_size; ++i) {
-		/* TODO: use memcpy here */
-		kappend(v, d->key2i[i]);
-	}
+	memcpy(&d->key2i[*d->key2i_size], d->tmp, total * sizeof(uint32_t));
+	*d->key2i_size += total;
+	if (*d->key2i_size > KEY2_ARRAY_LEN)
+		printf("error!\n");
 	pthread_mutex_unlock(d->mutex);
 
 	return 0;
-static size_t key2r_compute_next_array(const uint32_t *key2i_plus_1,
-				       size_t key2i_plus_1_size,
-				       uint32_t *key2i,
-				       const uint16_t *key2i_bits_15_2,
-				       const uint16_t *key2im1_bits_15_2,
-				       uint32_t common_bits_mask)
-{
-	size_t total = 0;
-
-	for (size_t i = 0; i < key2i_plus_1_size; ++i)
-		total += key2r_compute_single(key2i_plus_1[i],
-					      &key2i[total],
-					      key2i_bits_15_2,
-					      key2im1_bits_15_2,
-					      common_bits_mask);
-
-	return total;
 }
+
+/* static size_t key2r_compute_next_array(const uint32_t *key2i_plus_1, */
+/* 				       size_t key2i_plus_1_size, */
+/* 				       uint32_t *key2i, */
+/* 				       const uint16_t *key2i_bits_15_2, */
+/* 				       const uint16_t *key2im1_bits_15_2, */
+/* 				       uint32_t common_bits_mask) */
+/* { */
+/* 	size_t total = 0; */
+
+/* 	for (size_t i = 0; i < key2i_plus_1_size; ++i) */
+/* 		total += key2r_compute_single(key2i_plus_1[i], */
+/* 					      &key2i[total], */
+/* 					      key2i_bits_15_2, */
+/* 					      key2im1_bits_15_2, */
+/* 					      common_bits_mask); */
+
+/* 	return total; */
+/* } */
 
 #define SWAP(x, y) do { typeof(x) SWAP = x; x = y; y = SWAP; } while (0)
 
-ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
-{
-	struct kvector *key2i_plus_1, *key2i;
-	uint8_t key3i, key3im1;
-	int err = -1;
+/* TODO: taken from master branch.. was lost in merge */
+/* ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext) */
+/* { */
+/* 	uint8_t key3i, key3im1; */
+/* 	uint32_t *key2i, *key2ip1; */
+/* 	size_t key2i_size, key2ip1_size; */
 
-	struct reduc_param reduc_param = {
-		.final = &key2i,
-		.mutex = &mutex,
-	};
-	struct threadpool_ops ops = {
-		.in = &reduc_param,
-		.alloc_worker = alloc_reduc,
-		.dealloc_worker = dealloc_reduc,
-		.do_work = do_work_reduc,
-	};
+/* 	/\* first gen key2 (key2ip1) *\/ */
+/* 	key3i = generate_key3(ptext, ptext->text_size - 1); */
+/* 	key2ip1 = calloc(KEY2_ARRAY_LEN, sizeof(uint32_t)); */
+/* 	if (!key2ip1) */
+/* 		return -1; */
 
-	/* first gen key2 */
-	key3i = generate_key3(ptext, ptext->size - 1);
-	key2i_plus_1 = key2r_compute_first_gen(key2r_get_bits_15_2(ptext->k2r, key3i));
-	if (!key2i_plus_1)
-		goto err1;
+/* 	generate_all_key2_bits_31_2(key2ip1, get_bits_15_2(ptext->bits_15_2, key3i)); */
+/* 	key2ip1_size = KEY2_ARRAY_LEN; */
 
-	/* allocate space for second array */
-	if (kalloc(&key2i, pow2(22)))
-		goto err2;
+/* 	/\* allocate space for second array (key2i) *\/ */
+/* 	key2i = calloc(KEY2_ARRAY_LEN, sizeof(uint32_t)); */
+/* 	if (!key2i) { */
+/* 		free(key2ip1); */
+/* 		return -1; */
+/* 	} */
+/* 	key2i_size = 0; */
 
-	if (threadpool_start(ptext->pool,
-			     &ops,
-			     threads_to_create(ptext->force_threads)))
-		goto err3;
-	/* uint8_t key3i, key3im1; */
-	/* uint32_t *key2i, *key2ip1; */
-	/* size_t key2i_size, key2ip1_size; */
-
-	/* /\* first gen key2 (key2ip1) *\/ */
-	/* key3i = generate_key3(ptext, ptext->text_size - 1); */
-	/* key2ip1 = calloc(KEY2_ARRAY_LEN, sizeof(uint32_t)); */
-	/* if (!key2ip1) */
-	/* 	return -1; */
-
-	/* generate_all_key2_bits_31_2(key2ip1, get_bits_15_2(ptext->bits_15_2, key3i)); */
-	/* key2ip1_size = KEY2_ARRAY_LEN; */
-
-	/* /\* allocate space for second array (key2i) *\/ */
-	/* key2i = calloc(KEY2_ARRAY_LEN, sizeof(uint32_t)); */
-	/* if (!key2i) { */
-	/* 	free(key2ip1); */
-	/* 	return -1; */
-	/* } */
-	/* key2i_size = 0; */
-
-	/* perform reduction */
-	const size_t start_index = ptext->text_size - 2;
-	for (size_t i = start_index; i >= 12; --i) {
-		key3i = generate_key3(ptext, i);
-		key3im1 = generate_key3(ptext, i - 1);
-		if (key2r_compute_next_array(ptext->pool,
-					     key2i_plus_1,
-					     key2i,
-					     key2r_get_bits_15_2(ptext->k2r, key3i),
-					     key2r_get_bits_15_2(ptext->k2r, key3im1),
-					     i == start_index ? KEY2_MASK_6BITS : KEY2_MASK_8BITS))
-			goto err4; /* TODO: get rid of this */
-
-		kuniq(key2i);
-		SWAP(key2i, key2i_plus_1);
-	}
-
-	ksqueeze(key2i_plus_1); /* note: we swapped key2i and key2i+1 */
-
-	ptext->key2 = key2i_plus_1;  /* here, key2i_plus_1, is the array at
-				      * index 13 (n=14) this leaves 13
-				      * bytes for the actual attack */
-	err = 0;
-err4:
-	threadpool_cancel(ptext->pool);
-	threadpool_wait(ptext->pool);
-err3:
-	kfree(key2i);
-err2:
-	kfree(key2i_plus_1);
-err1:
-	return err;
+/* 	/\* perform reduction *\/ */
+/* 	const size_t start_index = ptext->text_size - 2; */
+/* 	for (size_t i = start_index; i >= 12; --i) { */
+/* 		key3i = generate_key3(ptext, i); */
+/* 		key3im1 = generate_key3(ptext, i - 1); */
 /* 		key2i_size = key2r_compute_next_array(key2ip1, */
 /* 						      key2ip1_size, */
 /* 						      key2i, */
@@ -355,4 +307,67 @@ err1:
 /* 	ptext->key2_size = key2ip1_size; */
 /* 	free(key2i); */
 /* 	return 0; */
+/* } */
+
+ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
+{
+	uint32_t *key2i, *key2ip1;
+	uint8_t key3i, key3im1;
+	size_t key2i_size, key2ip1_size;
+	struct reduc_input_param reduc_input;
+	struct threadpool_ops ops;
+	int err = -1;
+
+	/* first gen key2 (key2ip1) */
+	key3i = generate_key3(ptext, ptext->text_size - 1);
+	key2ip1 = calloc(KEY2_ARRAY_LEN, sizeof(uint32_t));
+	if (!key2ip1)
+		return -1;
+
+	generate_all_key2_bits_31_2(key2ip1, get_bits_15_2(ptext->bits_15_2, key3i));
+	key2ip1_size = KEY2_ARRAY_LEN;
+
+	/* allocate space for second array (key2i) */
+	key2i = calloc(KEY2_ARRAY_LEN, sizeof(uint32_t));
+	if (!key2i)
+		goto err1;
+
+	/* first destination buffer is key2i */
+	reduc_input.key2i = key2i;
+	reduc_input.key2i_size = 0;
+	pthread_mutex_init(&reduc_input.mutex, NULL);
+
+	ops.in = &reduc_input;
+	ops.alloc_worker = alloc_reduc;
+	ops.dealloc_worker = dealloc_reduc;
+	ops.do_work = do_work_reduc;
+
+	err = threadpool_start(ptext->pool, &ops, threads_to_create(ptext->force_threads));
+	if (err)
+		goto err2;
+
+	size_t start_index = ptext->text_size - 2;
+	for (size_t i = start_index; i >= 12; --i) {
+		key3i = generate_key3(ptext, i);
+		key3im1 = generate_key3(ptext, i - 1);
+		key2r_compute_next_array(ptext->pool,
+					 key2ip1,
+					 key2ip1_size,
+					 get_bits_15_2(ptext->bits_15_2, key3i),
+					 get_bits_15_2(ptext->bits_15_2, key3im1),
+					 i == start_index ? KEY2_MASK_6BITS : KEY2_MASK_8BITS);
+		uniq(reduc_input.key2i, &reduc_input.key2i_size);
+		printf("Reduced to: %ld\n", reduc_input.key2i_size);
+		/* TODO: TESTER ICIC */
+		SWAP(reduc_input.key2i, key2ip1);
+		key2ip1_size = reduc_input.key2i_size;
+		reduc_input.key2i_size = 0;
+	}
+
+	err = 0;
+err2:
+	free(key2i);
+err1:
+	free(key2ip1);
+	return err;
 }

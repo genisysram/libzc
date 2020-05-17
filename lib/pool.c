@@ -176,14 +176,15 @@ static void *worker(void *p)
 			pthread_cleanup_pop(0);
 		}
 
+		/* work --> active */
+		to_active_queue(w);
+
 		/* remove work from the queue */
 		struct list_head *work = w->pool->work_head.next;
 		list_del(w->pool->work_head.next);
 		pthread_cond_broadcast(&w->pool->work_cond);
 		pthread_mutex_unlock(&w->pool->work_mutex);
 
-		/* work --> active */
-		to_active_queue(w);
 		ret = w->pool->ops->do_work(w->data, work);
 	} while (ret == TPEMORE);
 
@@ -406,7 +407,7 @@ void threadpool_wait(struct threadpool *p)
 {
 	size_t left = p->nbthreads_created;
 
-	do {
+	while (left) {
 		pthread_mutex_lock(&p->mutex);
 		while (list_empty(&p->cleanup_head))
 			pthread_cond_wait(&p->cond, &p->mutex);
@@ -421,7 +422,7 @@ void threadpool_wait(struct threadpool *p)
 			--left;
 		}
 		pthread_mutex_unlock(&p->mutex);
-	} while (left);
+	}
 }
 
 /**
@@ -437,9 +438,6 @@ void threadpool_wait_idle(struct threadpool *p)
 
 	/* wait for workers that are still working to finish */
 	pthread_mutex_lock(&p->mutex);
-	/* printf("Idle empty: %s\n", list_empty(&p->idle_head) ? "yes" : "no"); */
-	/* printf("Active empty: %s\n", list_empty(&p->active_head) ? "yes" : "no"); */
-	/* printf("Cleanup empty: %s\n", list_empty(&p->cleanup_head) ? "yes" : "no"); */
 	while (!list_empty(&p->active_head)) {
 		pthread_cond_wait(&p->cond, &p->mutex);
 	}

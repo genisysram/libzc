@@ -210,7 +210,7 @@ static int do_work_reduc(void *data, struct list_head *list)
 	d->in->key2i_size += total;
 	pthread_mutex_unlock(&d->in->mutex);
 
-	return 0;
+	return TPEMORE;
 }
 
 #define SWAP(x, y) do { typeof(x) SWAP = x; x = y; y = SWAP; } while (0)
@@ -268,6 +268,8 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 	ptext->key2 = realloc(key2ip1, key2ip1_size * sizeof(uint32_t));
 	ptext->key2_size = key2ip1_size;
 	free(reduc_input.key2i);
+
+	threadpool_cancel(ptext->pool);
 
 	return 0;
 

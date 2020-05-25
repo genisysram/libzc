@@ -206,9 +206,11 @@ static int do_work_reduc(void *data, struct list_head *list)
 
 	/* copy back results to final shared buffer */
 	pthread_mutex_lock(&d->in->mutex);
-	memcpy(&d->in->key2i[d->in->key2i_size], d->tmp, total * sizeof(uint32_t));
+	size_t current = d->in->key2i_size;
 	d->in->key2i_size += total;
 	pthread_mutex_unlock(&d->in->mutex);
+
+	memcpy(&d->in->key2i[current], d->tmp, total * sizeof(uint32_t));
 
 	return TPEMORE;
 }

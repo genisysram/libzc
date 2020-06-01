@@ -105,15 +105,13 @@ struct reduc_work_unit {
 	const uint16_t *key2im1_bits_15_2;
 	uint32_t common_bits_mask;
 	const uint32_t *key2ip1;	/* keys to process */
-	size_t key2ip1_size;
+	size_t key2ip1_size;		/* number of keys to process */
 	struct list_head list;
 };
 
 struct reduc_data {
-	uint32_t *tmp;	/* buffer that accumulates, one per thread */
-
-	/* data shared between threads */
-	struct reduc_input_param *in;
+	uint32_t *tmp;	              /* temporary key2 buffer */
+	struct reduc_input_param *in; /* data shared between threads */
 };
 
 struct reduc_input_param {
@@ -147,6 +145,7 @@ static int key2r_compute_next_array(struct threadpool *pool,
 		u[i].key2ip1 = &key2ip1[i * nbkeys_per_thread];
 		u[i].key2ip1_size = nbkeys_per_thread;
 		if (i == nbunits - 1 && key2ip1_size % nbthreads)
+			/* add remaining keys to last thread */
 			u[i].key2ip1_size += key2ip1_size % nbthreads;
 		threadpool_submit_work(pool, &u[i].list);
 	}

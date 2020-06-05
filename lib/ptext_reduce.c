@@ -131,6 +131,7 @@ static int key2r_compute_next_array(struct threadpool *pool,
 	size_t nbthreads = threadpool_get_nbthreads(pool);
 	size_t nbunits = key2ip1_size < nbthreads ? key2ip1_size : nbthreads;
 	size_t nbkeys_per_thread = key2ip1_size / nbunits;
+	size_t rem = key2ip1_size % nbunits;
 
 	u = calloc(nbunits, sizeof(struct reduc_work_unit));
 	if (!u) {
@@ -138,17 +139,35 @@ static int key2r_compute_next_array(struct threadpool *pool,
 		return -1;
 	}
 
+	/* set constants */
 	for (size_t i = 0; i < nbunits; ++i) {
 		u[i].key2i_bits_15_2 = key2i_bits_15_2;
 		u[i].key2im1_bits_15_2 = key2im1_bits_15_2;
 		u[i].common_bits_mask = common_bits_mask;
-		u[i].key2ip1 = &key2ip1[i * nbkeys_per_thread];
-		u[i].key2ip1_size = nbkeys_per_thread;
-		if (i == nbunits - 1 && key2ip1_size % nbthreads)
-			/* add remaining keys to last thread */
-			u[i].key2ip1_size += key2ip1_size % nbthreads;
-		threadpool_submit_work(pool, &u[i].list);
 	}
+
+	if (!rem) {
+		for (size_t i = 0; i < nbunits; ++i) {
+			u[i].key2ip1 = &key2ip1[i * nbkeys_per_thread];
+			u[i].key2ip1_size = nbkeys_per_thread;
+		}
+	} else {
+		/* evenly distribute keys to work units */
+		size_t total = 0;
+		for (size_t i = 0; i < nbunits; ++i) {
+			u[i].key2ip1 = &key2ip1[total];
+			u[i].key2ip1_size = nbkeys_per_thread;
+			total += nbkeys_per_thread;
+			if (rem) {
+				u[i].key2ip1_size++;
+				total++; rem--;
+			}
+		}
+	}
+
+	/* submit work */
+	for (size_t i = 0; i < nbunits; ++i)
+		threadpool_submit_work(pool, &u[i].list);
 
 	threadpool_wait_idle(pool);
 

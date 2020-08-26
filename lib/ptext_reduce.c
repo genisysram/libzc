@@ -291,6 +291,8 @@ ZC_EXPORT int zc_crk_ptext_key2_reduction(struct zc_crk_ptext *ptext)
 
 	threadpool_cancel(ptext->pool);
 
+	pthread_mutex_destroy(&reduc_input.mutex);
+
 	return 0;
 
 err2:

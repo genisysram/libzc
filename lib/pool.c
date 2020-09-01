@@ -438,9 +438,8 @@ void threadpool_wait_idle(struct threadpool *p)
 
 	/* wait for workers that are still working to finish */
 	pthread_mutex_lock(&p->mutex);
-	while (!list_empty(&p->active_head)) {
+	while (!list_empty(&p->active_head))
 		pthread_cond_wait(&p->cond, &p->mutex);
-	}
 	pthread_mutex_unlock(&p->mutex);
 }
 

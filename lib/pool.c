@@ -295,7 +295,7 @@ size_t threadpool_get_nbthreads(const struct threadpool *pool)
 /**
  * Destroy the thread pool.
  *
- * Call only when threadpool_wait() has returned.
+ * Call only when threadpool_wait() or threadpool_cancel() has returned.
  */
 void threadpool_destroy(struct threadpool *p)
 {
